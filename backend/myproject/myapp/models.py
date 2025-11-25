@@ -18,7 +18,7 @@ class Lead(models.Model):
     contact_name = models.CharField(max_length=255)
     email = models.EmailField(max_length=255,unique=True,validators=[EmailValidator()])
     phone = models.CharField(max_length=20,blank=True,null=True,validators=[RegexValidator(regex=r'^\+?1?\d{9,15}$')])
-    siret = models.CharField(max_length=14,blank=True,null=True,validators=[RegexValidator(regex=r'^\d{194}$')],help_text="SIRET number (9 digits)")
+    siret = models.CharField(max_length=9,blank=True,null=True,validators=[RegexValidator(regex=r'^\d{9}$')],help_text="SIRET number (9 digits)")
     status = models.CharField(max_length=20,choices=LEAD_STATUS_CHOICES,default='nouveau')
     notes = models.TextField(blank=True, null=True)
     declared_at = models.DateTimeField(blank=True, null=True)

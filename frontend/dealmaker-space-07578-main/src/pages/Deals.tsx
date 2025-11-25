@@ -46,17 +46,21 @@ interface RelationInfo {
   offre_info: OffreInfo | null;
 }
 
+interface Lead {
+  id: string;
+  contact_name: string;
+  company_name: string;
+}
+
 const Deals = () => {
   const [deals, setDeals] = useState<Deal[]>([]);
-  const [relations, setRelations] = useState<RelationInfo[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [relationsLoading, setRelationsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draggedDeal, setDraggedDeal] = useState<string | null>(null);
   const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState({
     nom_deal: "",
-    nom_entreprise: "",
     stage: "prospection",
     type_deal: "one_shot",
     montant: "",
@@ -64,9 +68,27 @@ const Deals = () => {
     relation: "",
   });
 
+  // Search state for leads
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
+
   useEffect(() => {
     loadDeals();
+    loadAvailableLeads();
   }, []);
+
+  // Filter leads based on search term
+  useEffect(() => {
+    if (searchTerm.trim() === '') {
+      setFilteredLeads(leads);
+    } else {
+      const filtered = leads.filter(lead =>
+        lead.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        lead.contact_name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredLeads(filtered);
+    }
+  }, [searchTerm, leads]);
 
   const loadDeals = async () => {
     try {
@@ -80,15 +102,14 @@ const Deals = () => {
     }
   };
 
-  const loadRelations = async () => {
+  const loadAvailableLeads = async () => {
     try {
-      const response = await apiClient.get('/relations/');
-      setRelations(response.data);
+      const response = await apiClient.get('/deals/available_leads/');
+      setLeads(response.data);
+      setFilteredLeads(response.data); // Initialize filtered leads
     } catch (error: any) {
-      console.error('Error loading relations:', error);
-      toast.error("Erreur lors du chargement des relations");
-    } finally {
-      setRelationsLoading(false);
+      console.error('Error loading leads:', error);
+      toast.error("Erreur lors du chargement des leads");
     }
   };
 
@@ -100,11 +121,6 @@ const Deals = () => {
       return;
     }
     
-    if (!formData.nom_entreprise.trim()) {
-      toast.error("Le nom de l'entreprise est obligatoire");
-      return;
-    }
-    
     if (!formData.relation) {
       toast.error("La relation commerciale est obligatoire");
       return;
@@ -113,7 +129,6 @@ const Deals = () => {
     try {
       const payload = {
         nom_deal: formData.nom_deal.trim(),
-        nom_entreprise: formData.nom_entreprise.trim(),
         stage: formData.stage,
         type_deal: formData.type_deal,
         montant: formData.montant ? parseFloat(formData.montant) : null,
@@ -129,13 +144,15 @@ const Deals = () => {
       
       setFormData({
         nom_deal: "",
-        nom_entreprise: "",
         stage: "prospection",
         type_deal: "one_shot",
         montant: "",
         notes: "",
         relation: "",
       });
+      
+      // Clear search when form is submitted
+      setSearchTerm('');
       
       loadDeals();
     } catch (error: any) {
@@ -149,6 +166,14 @@ const Deals = () => {
         toast.error(error.response?.data?.error || "Erreur lors de la création du deal");
       }
     }
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  };
+
+  const clearSearch = () => {
+    setSearchTerm('');
   };
 
   const getStageColor = (stage: string) => {
@@ -292,31 +317,79 @@ const Deals = () => {
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="nom_entreprise">Entreprise *</Label>
-                    <Input
-                      id="nom_entreprise"
-                      value={formData.nom_entreprise}
-                      onChange={(e) => setFormData({ ...formData, nom_entreprise: e.target.value })}
-                      placeholder="Nom de l'entreprise cliente"
-                      required
-                    />
-                  </div>
                 </div>
 
+                {/* Lead Search Select */}
                 <div className="space-y-2">
-                  <Label htmlFor="relation">Relation Commerciale *</Label>
+                  <Label htmlFor="lead">Lead *</Label>
                   <Select 
                     value={formData.relation} 
-                    onValueChange={(value) => setFormData({ ...formData, relation: value })}
+                    onValueChange={(value) => {
+                      setFormData({ ...formData, relation: value });
+                      clearSearch(); // Clear search when a lead is selected
+                    }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Sélectionnez une relation" />
+                      <SelectValue placeholder="Rechercher un lead..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1">Relation avec Client A</SelectItem>
-                      <SelectItem value="2">Relation avec Client B</SelectItem>
-                      <SelectItem value="3">Relation avec Client C</SelectItem>
+                      <div className="p-2 border-b space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            placeholder="Rechercher par entreprise ou contact..."
+                            className="h-8 flex-1"
+                            value={searchTerm}
+                            onChange={handleSearchChange}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {searchTerm && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={clearSearch}
+                            >
+                              ×
+                            </Button>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {filteredLeads.length} lead(s) trouvé(s)
+                        </div>
+                      </div>
+                      
+                      <div className="max-h-60 overflow-y-auto">
+                        {filteredLeads.length > 0 ? (
+                          filteredLeads.map((lead) => (
+                            <SelectItem key={lead.id} value={lead.id.toString()}>
+                              <div className="flex flex-col py-1">
+                                <span className="font-medium text-sm">{lead.contact_name}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {lead.company_name}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="p-4 text-center text-sm text-muted-foreground">
+                            <div>🚫</div>
+                            <div className="mt-1">
+                              {searchTerm ? 'Aucun lead trouvé pour "' + searchTerm + '"' : 'Aucun lead disponible'}
+                            </div>
+                            {searchTerm && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="mt-2"
+                                onClick={clearSearch}
+                              >
+                                Effacer la recherche
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </SelectContent>
                   </Select>
                 </div>
@@ -383,6 +456,7 @@ const Deals = () => {
           </Dialog>
         </div>
 
+        {/* Rest of your existing JSX for deals pipeline */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {Object.entries(groupedDeals).map(([stage, stageDeals]) => (
             <div 
@@ -392,9 +466,7 @@ const Deals = () => {
               onDrop={(e) => handleDrop(e, stage)}
             >
               <h3 className="font-semibold text-lg flex items-center gap-2">
-                {stage === "gagne" ? "Gagné" : 
-                 stage === "negociation" ? "Négociation" : 
-                 stage === "prospection" ? "Prospection" : "Perdu"}
+                {getStageLabel(stage)}
                 <Badge variant="secondary">{stageDeals.length}</Badge>
               </h3>
               <div className="space-y-3 min-h-[200px] p-2 rounded-lg transition-colors bg-muted/20">

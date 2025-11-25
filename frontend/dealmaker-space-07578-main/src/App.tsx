@@ -11,7 +11,7 @@ import {
 
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
-import Leads from "./pages/Leads";
+import Leads from "./pages/leads/Leads";
 import Deals from "./pages/Deals";
 import Tasks from "./pages/Tasks";
 import Commissions from "./pages/Commissions";

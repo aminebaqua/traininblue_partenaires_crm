@@ -8,45 +8,108 @@ import re
 User = get_user_model()
 
 class LeadSerializer(serializers.ModelSerializer):
-    # show created_by as id and username read-only
     created_by = serializers.PrimaryKeyRelatedField(read_only=True)
     created_by_username = serializers.SerializerMethodField(read_only=True)
+    
+    # Champ pour l'écriture
+    offre_id = serializers.PrimaryKeyRelatedField(
+        queryset=Offre.objects.filter(actif=True),
+        write_only=True,
+        required=False,
+        source='offre'
+    )
+    
+    # ✅ CORRECTION: Récupérer l'offre depuis la relation
+    current_offre_id = serializers.SerializerMethodField(read_only=True)
+    offre_details = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Lead
         fields = [
             "id", "company_name", "contact_name", "email", "phone", "siret",
             "status", "notes", "declared_at", "created_at", "created_by",
-            "created_by_username",
+            "created_by_username", "offre_id", "current_offre_id", "offre_details"
         ]
         read_only_fields = ["id", "created_at", "created_by", "created_by_username"]
 
     def get_created_by_username(self, obj):
         return obj.created_by.username if obj.created_by else None
-
+    
+    def get_current_offre_id(self, obj):
+        """Récupérer l'ID de l'offre depuis la relation"""
+        try:
+            # Trouver la relation associée à ce lead
+            relation = Relation.objects.filter(lead=obj).first()
+            if relation and relation.offre:
+                return relation.offre.id
+            return None
+        except Exception:
+            return None
+    
+    def get_offre_details(self, obj):
+        """Récupérer les détails de l'offre depuis la relation"""
+        try:
+            # Trouver la relation associée à ce lead
+            relation = Relation.objects.filter(lead=obj).first()
+            if relation and relation.offre:
+                return {
+                    'id': relation.offre.id,
+                    'nom': relation.offre.nom_offre,
+                    'taux_commission': relation.offre.taux_commission,
+                    'plan_commission': relation.offre.plan_commission,
+                }
+            return None
+        except Exception as e:
+            print(f"Error getting offre details: {e}")
+            return None
+    
     def create(self, validated_data):
+        offre = validated_data.pop('offre', None)
+        
         request = self.context.get("request")
         user = getattr(request, "user", None)
+        
         if not validated_data.get("declared_at"):
             validated_data["declared_at"] = timezone.now()
-        # set created_by to request.user if available
+            
         if user and user.is_authenticated:
             validated_data["created_by"] = user
-        return super().create(validated_data)
+            
+        # Créer le lead
+        lead = super().create(validated_data)
+        
+        # ✅ CRÉER LA RELATION si une offre est fournie
+        if offre:
+            try:
+                Relation.objects.create(
+                    lead=lead,
+                    offre=offre,
+                    commercial=user,  # ou le commercial approprié
+                    # autres champs requis par votre modèle Relation
+                )
+            except Exception as e:
+                print(f"Error creating relation: {e}")
+            
+        return lead
     
-
+#  *************************************************************
 class LeadUpdateSerializer(serializers.ModelSerializer):
+    offre_id = serializers.PrimaryKeyRelatedField(
+    queryset=Offre.objects.filter(actif=True),
+    required=False,  # Optionnel pour la mise à jour
+    source='offre'
+    )
     class Meta:
         model = Lead
         fields = [
             "company_name", "contact_name", "email", "phone", "siret",
-            "status", "notes"
+            "status", "notes", "offre_id"
         ]
     
     def validate_siret(self, value):
         """Validation personnalisée pour SIRET"""
-        if value and len(value) != 14:
-            raise serializers.ValidationError("Le SIRET doit contenir exactement 14 chiffres")
+        if value and len(value) != 9:
+            raise serializers.ValidationError("Le SIRET doit contenir exactement 9 chiffres")
         if value and not value.isdigit():
             raise serializers.ValidationError("Le SIRET ne doit contenir que des chiffres")
         return value
@@ -90,15 +153,15 @@ class RelationInfoSerializer(serializers.ModelSerializer):
         fields = ['id', 'commercial', 'lead', 'offre', 'statut']
 
 class DealSerializer(serializers.ModelSerializer):
-    # plan_commission = serializers.SerializerMethodField()
-    # taux_commission = serializers.SerializerMethodField()
+    nom_entreprise = serializers.CharField(source='relation.lead.company_name', read_only=True)
+    lead_info = serializers.SerializerMethodField()
     
     class Meta:
         model = Deal
         fields = [
             'id',
             'nom_deal',
-            # 'nom_entreprise', 
+            'nom_entreprise',  # ✅ UNCOMMENTED - will be populated from relation.lead
             'stage',
             'type_deal',
             'montant',
@@ -108,24 +171,30 @@ class DealSerializer(serializers.ModelSerializer):
             'updated_at',
             'relation',
             'facture',
-            # 'plan_commission',  # Champ calculé
-            'taux_commission',  # Champ calculé
+            'taux_commission',
             'date_paiment_client', 
-            'date_paiment_commission'
+            'date_paiment_commission',
+            'lead_info'  # ✅ ADDED for additional lead information
         ]
-        read_only_fields = ['created_at', 'updated_at', 'remporte_le']
+        read_only_fields = ['created_at', 'updated_at', 'remporte_le', 'nom_entreprise']
 
-    # def get_plan_commission(self, obj):
-    #     """Récupère le plan_commission depuis l'offre via la relation"""
-    #     if obj.relation and obj.relation.offre:
-    #         return obj.relation.offre.plan_commission
-    #     return None
+    def get_lead_info(self, obj):
+        """Return lead information for the React form"""
+        if obj.relation and obj.relation.lead:
+            return {
+                'company_name': obj.relation.lead.company_name,
+                'contact_name': obj.relation.lead.contact_name,
+                'email': obj.relation.lead.email
+            }
+        return None
 
-    # def get_taux_commission(self, obj):
-    #     """Récupère le taux_commission depuis l'offre via la relation"""
-    #     if obj.relation and obj.relation.offre:
-    #         return obj.relation.offre.taux_commission
-    #     return None
+    def create(self, validated_data):
+        # ✅ Automatically set nom_entreprise from the relation's lead
+        relation = validated_data.get('relation')
+        if relation and relation.lead:
+            validated_data['nom_entreprise'] = relation.lead.company_name
+        
+        return super().create(validated_data)
 
 # *************************************************************
 
