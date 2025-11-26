@@ -94,7 +94,19 @@ class Relation(models.Model):
             models.Index(fields=['statut']),
             models.Index(fields=['commercial', 'statut']),
         ]
-        unique_together = ['lead', 'offre', 'commercial']
+        # Correction du unique_together pour gérer les leads null
+        constraints = [
+            models.UniqueConstraint(
+                fields=['lead', 'offre', 'commercial'],
+                name='unique_relation_per_lead',
+                condition=models.Q(lead__isnull=False)
+            ),
+            models.UniqueConstraint(
+                fields=['offre', 'commercial'],
+                name='unique_relation_without_lead',
+                condition=models.Q(lead__isnull=True)
+            ),
+        ]
 
     def __str__(self):
         return f"Relation {self.lead.company_name if self.lead else 'No Lead'} - {self.commercial.username}"
@@ -149,9 +161,9 @@ class Facture(models.Model):
 class Deal(models.Model):
     DEAL_STAGE_CHOICES = [
         ('prospection', 'Prospection'),
-        ('qualification', 'Qualification'),
+        # ('qualification', 'Qualification'),
         ('negociation', 'Négociation'),
-        ('contrat', 'Contrat'),
+        # ('contrat', 'Contrat'),
         ('gagne', 'Gagné'),
         ('perdu', 'Perdu'),
     ]
@@ -196,7 +208,7 @@ class Deal(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     # new fields
-    taux_commission = models.IntegerField()
+    taux_commission = models.IntegerField(blank=True, null=True)
     date_paiment_client = models.DateTimeField(blank=True, null=True)
     date_paiment_commission = models.DateTimeField(blank=True, null=True)
 

@@ -12,7 +12,7 @@ import {
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Leads from "./pages/leads/Leads";
-import Deals from "./pages/Deals";
+import Deals from "./pages/deals/Deals";
 import Tasks from "./pages/Tasks";
 import Commissions from "./pages/Commissions";
 import Profile from "./pages/Profile";

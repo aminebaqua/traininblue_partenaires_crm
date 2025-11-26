@@ -180,7 +180,7 @@ const Leads = () => {
         priorite: formData.priorite,
         statut: formData.statut,
       };
-
+      console.log("payload====>",payload )
       if (editingAction) {
         await apiClient.put(`/actions/${editingAction.id}/`, payload);
         toast.success("Action mise à jour !");

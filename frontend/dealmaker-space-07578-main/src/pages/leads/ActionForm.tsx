@@ -28,68 +28,115 @@ export const ActionForm = ({
 }: ActionFormProps) => {
   const [formData, setFormData] = useState<ActionFormData>({
     action_type: "email",
-    date_echeance: new Date().toISOString().slice(0, 19).replace('T', ' '),
+    date_echeance: "",
     titre: "",
     notes: "",
     priorite: "medium",
     statut: "en_attente",
   });
 
+  // Fonction pour formater la date pour l'input datetime-local
+  const formatDateTimeForInput = (date: Date | string): string => {
+    const dateObj = new Date(date);
+    return dateObj.toISOString().slice(0, 16);
+  };
+
+  // Fonction pour formater la date pour l'API
+  const formatDateTimeForAPI = (dateTimeString: string): string => {
+    return dateTimeString.replace('T', ' ') + ':00';
+  };
+
   useEffect(() => {
-    if (editingAction) {
-      setFormData({
-        action_type: editingAction.action_type,
-        date_echeance: new Date(editingAction.date_echeance).toISOString().slice(0, 19).replace('T', ' '),
-        titre: editingAction.titre,
-        notes: editingAction.notes || "",
-        priorite: editingAction.priorite,
-        statut: editingAction.statut,
-        realise_le: editingAction.realise_le || undefined,
-      });
-    } else {
-      const autoTitle = generateAutoTitle("email", selectedLead);
-      setFormData({
-        action_type: "email",
-        date_echeance: new Date().toISOString().slice(0, 19).replace('T', ' '),
-        titre: autoTitle,
-        notes: "",
-        priorite: "medium",
-        statut: "en_attente",
-      });
+    if (open) {
+      if (editingAction) {
+        // Mode édition
+        setFormData({
+          action_type: editingAction.action_type,
+          date_echeance: formatDateTimeForInput(editingAction.date_echeance),
+          titre: editingAction.titre,
+          notes: editingAction.notes || "",
+          priorite: editingAction.priorite,
+          statut: editingAction.statut,
+          realise_le: editingAction.realise_le ? formatDateTimeForInput(editingAction.realise_le) : undefined,
+        });
+      } else {
+        // Mode création
+        const autoTitle = generateAutoTitle("email", selectedLead);
+        setFormData({
+          action_type: "email",
+          date_echeance: formatDateTimeForInput(new Date()),
+          titre: autoTitle,
+          notes: "",
+          priorite: "medium",
+          statut: "en_attente",
+        });
+      }
     }
   }, [editingAction, selectedLead, open]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
+    
+    // Valider les champs requis
+    if (!formData.titre.trim()) {
+      alert("Le titre est obligatoire");
+      return;
+    }
+    
+    if (!formData.date_echeance) {
+      alert("La date d'échéance est obligatoire");
+      return;
+    }
+
+    // Formater les dates pour l'API
+    const submitData = {
+      ...formData,
+      date_echeance: formatDateTimeForAPI(formData.date_echeance),
+      realise_le: formData.realise_le ? formatDateTimeForAPI(formData.realise_le) : undefined,
+    };
+    
+    onSubmit(submitData);
   };
 
   const handleActionTypeChange = (value: string) => {
-    const newFormData = { ...formData, action_type: value };
+    const newFormData = { 
+      ...formData, 
+      action_type: value as ActionFormData['action_type']
+    };
     
-    // Générer un titre automatique si c'est une nouvelle action
-    if (!editingAction && (!formData.titre || formData.titre.startsWith('Action'))) {
-      const titles = {
-        call: `Appel ${selectedLead?.contact_name || ''}`,
-        email: `Email ${selectedLead?.contact_name || ''}`,
-        meeting: `RDV ${selectedLead?.company_name || ''}`,
-        other: 'Action planifiée'
-      };
-      newFormData.titre = titles[value as keyof typeof titles]?.trim() || `Action ${value}`;
+    // Générer un titre automatique seulement en mode création
+    if (!editingAction) {
+      const autoTitle = generateAutoTitle(value as ActionFormData['action_type'], selectedLead);
+      newFormData.titre = autoTitle;
     }
     
     setFormData(newFormData);
   };
 
+  const handleClose = () => {
+    onOpenChange(false);
+    // Réinitialiser le formulaire après fermeture
+    setTimeout(() => {
+      setFormData({
+        action_type: "email",
+        date_echeance: formatDateTimeForInput(new Date()),
+        titre: "",
+        notes: "",
+        priorite: "medium",
+        statut: "en_attente",
+      });
+    }, 300);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>
             {editingAction ? "Modifier l'action" : "Nouvelle Action"}
           </DialogTitle>
           <DialogDescription>
-            {selectedLead && `Pour ${selectedLead.company_name} - ${selectedLead.contact_name}`}
+            {selectedLead ? `Pour ${selectedLead.company_name} - ${selectedLead.contact_name}` : "Sélectionnez un lead"}
           </DialogDescription>
         </DialogHeader>
         
@@ -100,6 +147,7 @@ export const ActionForm = ({
             <Select 
               value={formData.action_type} 
               onValueChange={handleActionTypeChange}
+              disabled={isSubmitting}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Sélectionnez un type" />
@@ -122,6 +170,7 @@ export const ActionForm = ({
               onChange={(e) => setFormData({ ...formData, titre: e.target.value })}
               placeholder="Ex: Appel de suivi, Envoi de devis..."
               required
+              disabled={isSubmitting}
             />
           </div>
           
@@ -134,6 +183,7 @@ export const ActionForm = ({
               value={formData.date_echeance}
               onChange={(e) => setFormData({ ...formData, date_echeance: e.target.value })}
               required
+              disabled={isSubmitting}
             />
           </div>
           
@@ -144,6 +194,7 @@ export const ActionForm = ({
               <Select 
                 value={formData.priorite} 
                 onValueChange={(value) => setFormData({ ...formData, priorite: value })}
+                disabled={isSubmitting}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -162,6 +213,7 @@ export const ActionForm = ({
               <Select 
                 value={formData.statut} 
                 onValueChange={(value) => setFormData({ ...formData, statut: value })}
+                disabled={isSubmitting}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -182,8 +234,9 @@ export const ActionForm = ({
               <Input
                 id="realise_le"
                 type="datetime-local"
-                value={formData.realise_le || new Date().toISOString().slice(0, 16)}
+                value={formData.realise_le || formatDateTimeForInput(new Date())}
                 onChange={(e) => setFormData({ ...formData, realise_le: e.target.value })}
+                disabled={isSubmitting}
               />
             </div>
           )}
@@ -197,6 +250,7 @@ export const ActionForm = ({
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               rows={3}
               placeholder="Notes supplémentaires sur cette action..."
+              disabled={isSubmitting}
             />
           </div>
           
@@ -204,12 +258,18 @@ export const ActionForm = ({
             <Button 
               type="button" 
               variant="outline" 
-              onClick={() => onOpenChange(false)}
+              onClick={handleClose}
+              disabled={isSubmitting}
             >
               Annuler
             </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Enregistrement..." : editingAction ? "Mettre à jour" : "Créer l'action"}
+              {isSubmitting 
+                ? "Enregistrement..." 
+                : editingAction 
+                  ? "Mettre à jour" 
+                  : "Créer l'action"
+              }
             </Button>
           </DialogFooter>
         </form>

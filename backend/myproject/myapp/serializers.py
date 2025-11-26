@@ -4,6 +4,7 @@ from django.utils import timezone
 from .models import Lead, Action, Offre, Relation, Facture, Deal, Profil, Commission
 from django.contrib.auth import get_user_model
 import re
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -151,6 +152,7 @@ class RelationInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Relation
         fields = ['id', 'commercial', 'lead', 'offre', 'statut']
+#  *************************************************************
 
 class DealSerializer(serializers.ModelSerializer):
     nom_entreprise = serializers.CharField(source='relation.lead.company_name', read_only=True)
@@ -161,7 +163,7 @@ class DealSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'nom_deal',
-            'nom_entreprise',  # ✅ UNCOMMENTED - will be populated from relation.lead
+            'nom_entreprise',
             'stage',
             'type_deal',
             'montant',
@@ -174,7 +176,7 @@ class DealSerializer(serializers.ModelSerializer):
             'taux_commission',
             'date_paiment_client', 
             'date_paiment_commission',
-            'lead_info'  # ✅ ADDED for additional lead information
+            'lead_info'
         ]
         read_only_fields = ['created_at', 'updated_at', 'remporte_le', 'nom_entreprise']
 
@@ -188,14 +190,107 @@ class DealSerializer(serializers.ModelSerializer):
             }
         return None
 
-    def create(self, validated_data):
-        # ✅ Automatically set nom_entreprise from the relation's lead
-        relation = validated_data.get('relation')
-        if relation and relation.lead:
-            validated_data['nom_entreprise'] = relation.lead.company_name
+    def validate(self, data):
+        """
+        Validation supplémentaire pour s'assurer que la relation est valide
+        """
+        relation = data.get('relation')
+        request = self.context.get('request')
         
-        return super().create(validated_data)
+        if not relation:
+            raise serializers.ValidationError({
+                "relation": ["La relation commerciale est obligatoire."]
+            })
+        
+        # Vérifier que l'utilisateur a le droit d'utiliser cette relation
+        if request and hasattr(relation, 'commercial'):
+            if request.user != relation.commercial:
+                raise serializers.ValidationError({
+                    "relation": ["Vous n'avez pas accès à cette relation."]
+                })
+        
+        return data
 
+    def create(self, validated_data):
+        """
+        Création d'un deal avec gestion des valeurs par défaut
+        et de la logique métier
+        """
+        # Récupérer la relation
+        relation = validated_data.get('relation')
+        
+        print(f"🔄 Création du deal pour la relation: {relation.id}")
+        
+        # 1. Gestion du taux de commission
+        if 'taux_commission' not in validated_data or validated_data['taux_commission'] is None:
+            # Utiliser le taux de commission de l'offre de la relation
+            if relation and relation.offre:
+                validated_data['taux_commission'] = relation.offre.taux_commission
+                print(f"📊 Taux de commission utilisé depuis l'offre: {relation.offre.taux_commission}")
+            else:
+                validated_data['taux_commission'] = 0
+                print("📊 Taux de commission par défaut: 0")
+        
+        # 2. Déterminer automatiquement le type_deal si non fourni
+        if not validated_data.get('type_deal'):
+            if relation and relation.lead_id:
+                # Vérifier si ce lead a déjà des deals durables
+                existing_durable_deals = Deal.objects.filter(
+                    relation__lead_id=relation.lead_id,
+                    type_deal='durable'
+                ).exists()
+                
+                if existing_durable_deals:
+                    validated_data['type_deal'] = 'one_shot'
+                    print("🎯 Type de deal déterminé: one_shot (déjà un deal durable existant)")
+                else:
+                    # Utiliser le plan de commission de l'offre comme indicateur
+                    if relation.offre and relation.offre.plan_commission == 'durable':
+                        validated_data['type_deal'] = 'durable'
+                        print("🎯 Type de deal déterminé: durable (selon l'offre)")
+                    else:
+                        validated_data['type_deal'] = 'one_shot'
+                        print("🎯 Type de deal déterminé: one_shot (par défaut)")
+            else:
+                validated_data['type_deal'] = 'one_shot'
+                print("🎯 Type de deal par défaut: one_shot")
+        
+        # 3. Mettre à jour la date de dernière action de la relation
+        if relation:
+            relation.derniere_action = timezone.now()
+            relation.save(update_fields=['derniere_action'])
+            print("🕐 Date de dernière action de la relation mise à jour")
+        
+        # 4. Si le deal est gagné, mettre à jour la date de remport
+        if validated_data.get('stage') == 'gagne' and not validated_data.get('remporte_le'):
+            validated_data['remporte_le'] = timezone.now()
+            print("🏆 Date de remport automatiquement définie")
+        
+        print(f"✅ Données validées pour la création: {validated_data}")
+        
+        try:
+            # Créer l'instance
+            instance = super().create(validated_data)
+            
+            # 5. Post-création: Mettre à jour le statut du lead si nécessaire
+            if relation and relation.lead:
+                if instance.stage == 'gagne':
+                    relation.lead.status = 'converti'
+                    relation.lead.save(update_fields=['status'])
+                    print("🔄 Statut du lead mis à jour: converti")
+                elif instance.stage == 'perdu':
+                    relation.lead.status = 'perdu'
+                    relation.lead.save(update_fields=['status'])
+                    print("🔄 Statut du lead mis à jour: perdu")
+            
+            print(f"✅ Deal créé avec succès: {instance.id}")
+            return instance
+            
+        except Exception as e:
+            print(f"❌ Erreur lors de la création du deal: {str(e)}")
+            raise serializers.ValidationError({
+                "non_field_errors": [f"Erreur lors de la création du deal: {str(e)}"]
+            })
 # *************************************************************
 
 class ActionSerializer(serializers.ModelSerializer):
@@ -224,12 +319,12 @@ class ActionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_at', 'updated_at', 'commercial', 'realise_le']
 
-    def validate_date_echeance(self, value):
-        """Validation de la date d'échéance"""
-        print("===========>",value)
-        if value < timezone.now():
-            raise serializers.ValidationError("La date d'échéance ne peut pas être dans le passé.")
-        return value
+    # def validate_date_echeance(self, value):
+    #     """Validation de la date d'échéance"""
+    #     print("===========>",value)
+    #     if value < timezone.now():
+    #         raise serializers.ValidationError("La date d'échéance ne peut pas être dans le passé.")
+    #     return value
 
     def validate(self, data):
         """Validation globale"""
