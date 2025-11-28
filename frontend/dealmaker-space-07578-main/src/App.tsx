@@ -14,7 +14,7 @@ import Dashboard from "./pages/Dashboard";
 import Leads from "./pages/leads/Leads";
 import Deals from "./pages/deals/Deals";
 import Tasks from "./pages/Tasks";
-import Commissions from "./pages/Commissions";
+import Commissions from "./pages/commissions/Commissions";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -63,7 +63,7 @@ const router = createBrowserRouter([
   },
   {
     path: "*",
-    element: <NotFound />,
+    element: <Auth />,
   },
 ], 
 );

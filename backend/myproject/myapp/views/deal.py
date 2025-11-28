@@ -1,11 +1,14 @@
 from rest_framework import viewsets, permissions
-from ..models import Deal, Relation
+from ..models import Deal, Relation, Facture
 from rest_framework import viewsets, permissions, filters
 from django_filters.rest_framework import DjangoFilterBackend
-from ..serializers import DealSerializer
+from ..serializers import DealSerializer, FactureSerializer
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.decorators import action
+from datetime import timedelta
+from django.db import transaction
+
 
 class DealViewSet(viewsets.ModelViewSet):
     serializer_class = DealSerializer
@@ -128,3 +131,160 @@ class DealViewSet(viewsets.ModelViewSet):
                 {"error": "Erreur serveur interne", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+
+    @action(detail=False, methods=['get'])
+    def commissions(self, request):
+        """Get won deals for commissions page (without invoices)"""
+        try:
+            queryset = self.get_queryset().filter(
+                stage='gagne',
+                facture__isnull=True  # Only deals without invoices
+            ).select_related(
+                'relation__lead', 
+                'relation__offre',
+                'facture'
+            )
+            
+            # Apply filtering and ordering
+            queryset = self.filter_queryset(queryset)
+            
+            # Pagination if needed
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            print(f"❌ Erreur dans commissions: {str(e)}")
+            return Response(
+                {"error": "Erreur lors du chargement des commissions"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+    @action(detail=False, methods=['post'])
+    def create_facture_from_deals(self, request):
+        """Create invoice from selected deals"""
+        deal_ids = request.data.get('deal_ids', [])
+        
+        if not deal_ids:
+            return Response(
+                {'error': 'Veuillez sélectionner au moins un deal'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            with transaction.atomic():
+                # Get selected deals (only those belonging to current user and without invoice)
+                deals = Deal.objects.filter(
+                    id__in=deal_ids,
+                    relation__commercial=request.user,  # Security: user owns these deals
+                    stage='gagne',
+                    facture__isnull=True
+                )
+                
+                if not deals:
+                    return Response(
+                        {'error': 'Aucun deal valide trouvé'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Calculate total amounts
+                total_montant_ht = sum(deal.montant or 0 for deal in deals)
+                total_montant_ttc = total_montant_ht * 1.2  # Assuming 20% TVA
+                
+                # Generate invoice number
+                from datetime import datetime, timedelta
+                invoice_count = Facture.objects.count() + 1
+                invoice_number = f"FACT-{datetime.now().strftime('%Y%m%d')}-{invoice_count:04d}"
+                
+                # Create invoice
+                facture = Facture.objects.create(
+                    commercial=request.user,
+                    numero_facture=invoice_number,
+                    montant_ht=total_montant_ht,
+                    montant_ttc=total_montant_ttc,
+                    date_facture=datetime.now().date(),
+                    date_echeance=datetime.now().date() + timedelta(days=30),  # 30 days due date
+                    statut_paiement='pending'
+                )
+                
+                # Update deals with the invoice
+                deals.update(facture=facture)
+                
+                # Serialize the invoice with deals - use correct import path
+                # from .serializers import FactureSerializer  # Adjust path if needed
+                serializer = FactureSerializer(facture, context={'request': request})
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+                
+        except Exception as e:
+            print(f"❌ Erreur création facture: {str(e)}")
+            return Response(
+                {'error': f'Erreur lors de la création de la facture: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    # @action(detail=False, methods=['post'])
+    # def create_facture_from_deals(self, request):
+    #     """Create invoice from selected deals"""
+    #     deal_ids = request.data.get('deal_ids', [])
+        
+    #     if not deal_ids:
+    #         return Response(
+    #             {'error': 'Veuillez sélectionner au moins un deal'},
+    #             status=status.HTTP_400_BAD_REQUEST
+    #         )
+        
+    #     try:
+    #         with transaction.atomic():
+    #             # Get selected deals (only those belonging to current user and without invoice)
+    #             deals = Deal.objects.filter(
+    #                 id__in=deal_ids,
+    #                 relation__commercial=request.user,  # Security: user owns these deals
+    #                 stage='gagne',
+    #                 facture__isnull=True
+    #             )
+                
+    #             if not deals:
+    #                 return Response(
+    #                     {'error': 'Aucun deal valide trouvé'},
+    #                     status=status.HTTP_400_BAD_REQUEST
+    #                 )
+                
+    #             # Calculate total amounts
+    #             total_montant_ht = sum(deal.montant or 0 for deal in deals)
+    #             total_montant_ttc = total_montant_ht * 1.2  # Assuming 20% TVA
+                
+    #             # Generate invoice number
+    #             from datetime import datetime
+    #             invoice_count = Facture.objects.count() + 1
+    #             invoice_number = f"FACT-{datetime.now().strftime('%Y%m%d')}-{invoice_count:04d}"
+                
+    #             # Create invoice
+    #             facture = Facture.objects.create(
+    #                 commercial=request.user,
+    #                 numero_facture=invoice_number,
+    #                 montant_ht=total_montant_ht,
+    #                 montant_ttc=total_montant_ttc,
+    #                 date_facture=datetime.now().date(),
+    #                 date_echeance=datetime.now().date() + timedelta(days=30),  # 30 days due date
+    #                 statut_paiement='pending'
+    #             )
+                
+    #             # Update deals with the invoice
+    #             deals.update(facture=facture)
+                
+    #             # Serialize the invoice with deals
+    #             from ..serializers import FactureSerializer
+    #             serializer = FactureSerializer(facture, context={'request': request})
+    #             return Response(serializer.data, status=status.HTTP_201_CREATED)
+                
+    #     except Exception as e:
+    #         print(f"❌ Erreur création facture: {str(e)}")
+    #         return Response(
+    #             {'error': f'Erreur lors de la création de la facture: {str(e)}'},
+    #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+    #         )

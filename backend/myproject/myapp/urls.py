@@ -9,7 +9,6 @@ from .views import (
     facture,
     deal,
     profil,
-    commission,
     auth,
     stats,
     users,
@@ -24,7 +23,6 @@ router.register(r"relations", relation.RelationViewSet, basename="relation")
 router.register(r"factures", facture.FactureViewSet, basename="facture")
 router.register(r"deals", deal.DealViewSet, basename="deal")
 router.register(r'current-user', users.CurrentUserViewSet, basename='current-user')
-router.register(r"commissions", commission.CommissionViewSet, basename="commission")
 
 urlpatterns = [
     path("signup/", auth.signup, name="signup"),

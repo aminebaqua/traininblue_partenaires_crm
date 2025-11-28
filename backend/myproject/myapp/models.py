@@ -145,6 +145,7 @@ class Facture(models.Model):
         choices=PAYMENT_STATUS_CHOICES,
         default='pending'
     )
+    fichier = models.FileField(upload_to='factures/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -318,33 +319,3 @@ class Profil(models.Model):
     def __str__(self):
         return f"Profil de {self.user.username}"
 
-class Commission(models.Model):
-    """Model to track commissions for deals"""
-    deal = models.ForeignKey(
-        Deal, 
-        on_delete=models.CASCADE,
-        related_name='commissions'
-    )
-    # à supprimer
-    commercial = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE,
-        related_name='commissions'
-    )
-    montant_commission = models.IntegerField()
-    taux_commission = models.IntegerField()
-    statut = models.CharField(
-        max_length=20,
-        choices=[
-            ('pending', 'En attente'),
-            ('paid', 'Payée'),
-            ('cancelled', 'Annulée'),
-        ],
-        default='pending'
-    )
-    date_paiement = models.DateField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Commission {self.deal.nom_deal} - {self.montant_commission}"

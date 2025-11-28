@@ -35,8 +35,12 @@ export const DealPipeline = ({ deals, onDealMoved }: DealPipelineProps) => {
       toast.success("Deal déplacé avec succès !");
       onDealMoved();
     } catch (error: any) {
-      console.error('Error moving deal:', error);
-      toast.error(error.response?.data?.error || "Erreur lors du déplacement du deal");
+      console.error('--- Full Drag & Drop Error ---');
+      console.error(error);
+      if (error.response) {
+        console.error('Backend Response:', error.response.data);
+      }
+      toast.error(error.response?.data?.detail || error.response?.data?.error || "Erreur lors du déplacement du deal");
     } finally {
       setDraggedDeal(null);
     }

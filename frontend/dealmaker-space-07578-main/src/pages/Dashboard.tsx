@@ -9,7 +9,6 @@ const Dashboard = () => {
     totalLeads: 0,
     activeDeals: 0,
     wonDeals: 0,
-    totalCommissions: 0,
   });
 
 
@@ -75,16 +74,7 @@ if (authError) {
       color: "text-accent",
       bgColor: "bg-accent/10",
     },
-    {
-      title: "Commissions totales",
-      value: `${stats.totalCommissions.toLocaleString("fr-FR", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })} €`,
-      icon: DollarSign,
-      color: "text-accent",
-      bgColor: "bg-accent/10",
-    },
+
   ];
 
   return (

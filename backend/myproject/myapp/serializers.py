@@ -1,7 +1,7 @@
 # serializers.py
 from rest_framework import serializers
 from django.utils import timezone
-from .models import Lead, Action, Offre, Relation, Facture, Deal, Profil, Commission
+from .models import Lead, Action, Offre, Relation, Facture, Deal, Profil
 from django.contrib.auth import get_user_model
 import re
 from django.utils import timezone
@@ -192,22 +192,31 @@ class DealSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """
-        Validation supplémentaire pour s'assurer que la relation est valide
+        Validation to ensure the relation is valid.
+        The relation is only required on creation.
         """
-        relation = data.get('relation')
-        request = self.context.get('request')
-        
-        if not relation:
+        # On creation (self.instance is None), 'relation' must be in the data.
+        if self.instance is None and 'relation' not in data:
             raise serializers.ValidationError({
                 "relation": ["La relation commerciale est obligatoire."]
             })
-        
-        # Vérifier que l'utilisateur a le droit d'utiliser cette relation
-        if request and hasattr(relation, 'commercial'):
-            if request.user != relation.commercial:
+
+        # If 'relation' is provided in the payload (for create or update),
+        # validate that the user has access to it.
+        if 'relation' in data:
+            relation = data.get('relation')
+            request = self.context.get('request')
+
+            if not relation:
                 raise serializers.ValidationError({
-                    "relation": ["Vous n'avez pas accès à cette relation."]
+                    "relation": ["La relation ne peut pas être nulle."]
                 })
+            
+            if request and hasattr(relation, 'commercial'):
+                if request.user != relation.commercial:
+                    raise serializers.ValidationError({
+                        "relation": ["Vous n'avez pas accès à cette relation."]
+                    })
         
         return data
 
@@ -347,12 +356,21 @@ class RelationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Relation
         fields = '__all__'
-
+# *************************************************************
 class FactureSerializer(serializers.ModelSerializer):
+    deal = DealSerializer(read_only=True)
+    commercial_name = serializers.CharField(source='commercial.get_full_name', read_only=True)
+    
     class Meta:
         model = Facture
-        fields = '__all__'
+        fields = [
+            'id', 'numero_facture', 'montant_ht', 'montant_ttc', 
+            'date_facture', 'date_echeance', 'statut_paiement', 'fichier',
+            'deal', 'commercial_name', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']
 
+# *************************************************************
 
 class UserProfileSerializer(serializers.ModelSerializer):
     phone = serializers.CharField(source='profil.telephone', read_only=True)
@@ -364,7 +382,3 @@ class UserProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'email', 'date_joined']
 
 
-class CommissionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Commission
-        fields = '__all__'
