@@ -206,7 +206,7 @@ const Tasks = () => {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="hover:bg-red-00 hover:text-white"
+                        className="hover:bg-red-500 hover:text-white"
                         onClick={() => handleToggleStatus(action.id, "annulee")}
                       >
                         <XCircle className="h-4 w-4 mr-2" />

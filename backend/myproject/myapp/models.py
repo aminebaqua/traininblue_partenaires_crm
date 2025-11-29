@@ -18,7 +18,7 @@ class Lead(models.Model):
     contact_name = models.CharField(max_length=255)
     email = models.EmailField(max_length=255,unique=True,validators=[EmailValidator()])
     phone = models.CharField(max_length=20,blank=True,null=True,validators=[RegexValidator(regex=r'^\+?1?\d{9,15}$')])
-    siret = models.CharField(max_length=14,blank=True,null=True,validators=[RegexValidator(regex=r'^\d{194}$')],help_text="SIRET number (9 digits)")
+    siret = models.CharField(max_length=9,blank=True,null=True,validators=[RegexValidator(regex=r'^\d{9}$')],help_text="SIRET number (9 digits)")
     status = models.CharField(max_length=20,choices=LEAD_STATUS_CHOICES,default='nouveau')
     notes = models.TextField(blank=True, null=True)
     declared_at = models.DateTimeField(blank=True, null=True)
@@ -94,7 +94,19 @@ class Relation(models.Model):
             models.Index(fields=['statut']),
             models.Index(fields=['commercial', 'statut']),
         ]
-        unique_together = ['lead', 'offre', 'commercial']
+        # Correction du unique_together pour gérer les leads null
+        constraints = [
+            models.UniqueConstraint(
+                fields=['lead', 'offre', 'commercial'],
+                name='unique_relation_per_lead',
+                condition=models.Q(lead__isnull=False)
+            ),
+            models.UniqueConstraint(
+                fields=['offre', 'commercial'],
+                name='unique_relation_without_lead',
+                condition=models.Q(lead__isnull=True)
+            ),
+        ]
 
     def __str__(self):
         return f"Relation {self.lead.company_name if self.lead else 'No Lead'} - {self.commercial.username}"
@@ -133,6 +145,7 @@ class Facture(models.Model):
         choices=PAYMENT_STATUS_CHOICES,
         default='pending'
     )
+    fichier = models.FileField(upload_to='factures/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -149,9 +162,9 @@ class Facture(models.Model):
 class Deal(models.Model):
     DEAL_STAGE_CHOICES = [
         ('prospection', 'Prospection'),
-        ('qualification', 'Qualification'),
+        # ('qualification', 'Qualification'),
         ('negociation', 'Négociation'),
-        ('contrat', 'Contrat'),
+        # ('contrat', 'Contrat'),
         ('gagne', 'Gagné'),
         ('perdu', 'Perdu'),
     ]
@@ -196,7 +209,7 @@ class Deal(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     # new fields
-    taux_commission = models.IntegerField()
+    taux_commission = models.IntegerField(blank=True, null=True)
     date_paiment_client = models.DateTimeField(blank=True, null=True)
     date_paiment_commission = models.DateTimeField(blank=True, null=True)
 
@@ -306,33 +319,3 @@ class Profil(models.Model):
     def __str__(self):
         return f"Profil de {self.user.username}"
 
-class Commission(models.Model):
-    """Model to track commissions for deals"""
-    deal = models.ForeignKey(
-        Deal, 
-        on_delete=models.CASCADE,
-        related_name='commissions'
-    )
-    # à supprimer
-    commercial = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE,
-        related_name='commissions'
-    )
-    montant_commission = models.IntegerField()
-    taux_commission = models.IntegerField()
-    statut = models.CharField(
-        max_length=20,
-        choices=[
-            ('pending', 'En attente'),
-            ('paid', 'Payée'),
-            ('cancelled', 'Annulée'),
-        ],
-        default='pending'
-    )
-    date_paiement = models.DateField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Commission {self.deal.nom_deal} - {self.montant_commission}"
